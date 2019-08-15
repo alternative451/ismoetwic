@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<style>
+    * {
+        border: 0;margin: 0;padding: 0;
+    }
+
+
+</style>
+<canvas id="c">
+
+</canvas>
+
+
+<script>
+
+function LightenDarkenColor(col, amt) {
+  
+  var usePound = false;
+
+  if (col[0] == "#") {
+      col = col.slice(1);
+      usePound = true;
+  }
+
+  var num = parseInt(col,16);
+
+  var r = (num >> 16) + amt;
+
+  if (r > 255) r = 255;
+  else if  (r < 0) r = 0;
+
+  var b = ((num >> 8) & 0x00FF) + amt;
+
+  if (b > 255) b = 255;
+  else if  (b < 0) b = 0;
+
+  var g = (num & 0x0000FF) + amt;
+
+  if (g > 255) g = 255;
+  else if (g < 0) g = 0;
+
+  return (usePound?"#":"") + (g | (b << 8) | (r << 16)).toString(16);
+
+}
+</script>
+
+<script>
+    c.width = window.innerWidth
+    c.height = window.innerHeight
+
+    ctx = c.getContext("2d")
+
+    ctx.fillStyle = "#C1C5C9"
+    ctx.fillRect(0,0,window.innerWidth, window.innerHeight)
+
+
+    const map = [
+        1, 1, 1, 1,
+        1, 0, 0, 1,
+        1, 0, 2, 1,
+        1, 1, 1, 1,
+    ]
+    const ids = [
+        "#123FC1",
+        "#44c629",
+        "#904110",
+    ]
+
+    const mapW = 4
+    const mapH = 4
+
+
+
+    const camOffsetX = -160
+    const camOffsetY = -160
+    const camOffsetZ = 0
+
+    const TILE_SIZE = 30
+    const ALPHA = 37//°
+    const W = Math.sqrt(2) * TILE_SIZE
+    const H = W * Math.sin(37 * Math.PI / 180) 
+
+    const O_X = window.innerWidth / 2
+    const O_Y = window.innerHeight
+
+
+
+    const clearColor = (color) => {
+        return LightenDarkenColor(color, 20)
+    }
+
+    const darkColor = (color) => {
+        return LightenDarkenColor(color, -20)
+    }
+
+    const drawAgent = (x, y) => {
+        
+    }
+
+    const drawTile = (id, posX, posY, posZ, d) => {
+    
+        const posXScale = posX //* W
+        const posYScale = posY //* H
+
+        ctx.beginPath()
+        ctx.moveTo(posXScale + camOffsetX, posYScale + camOffsetY)
+        ctx.lineTo(posXScale + camOffsetX + W, posYScale + camOffsetY + H)
+        ctx.lineTo(posXScale + camOffsetX + W * 2, posYScale + camOffsetY)
+        ctx.lineTo(posXScale + camOffsetX + W, posYScale + camOffsetY - H)
+        ctx.closePath()
+        ctx.fillStyle = ids[id]
+        ctx.fill()
+
+        ctx.beginPath()
+        ctx.moveTo(posXScale + camOffsetX, posYScale + camOffsetY)
+        ctx.lineTo(posXScale + camOffsetX, posYScale + camOffsetY + TILE_SIZE)
+        ctx.lineTo(posXScale + camOffsetX + W, posYScale + camOffsetY + H + TILE_SIZE)
+        ctx.lineTo(posXScale + camOffsetX + W, posYScale + camOffsetY + H)
+        ctx.closePath()
+        ctx.fillStyle = darkColor(ids[id])
+        ctx.fill()
+
+        ctx.beginPath()
+        ctx.moveTo(posXScale + camOffsetX + W * 2, posYScale + camOffsetY)
+        ctx.lineTo(posXScale + camOffsetX + W * 2, posYScale + camOffsetY + TILE_SIZE)
+        ctx.lineTo(posXScale + camOffsetX + W, posYScale + camOffsetY + H + TILE_SIZE)
+        ctx.lineTo(posXScale + camOffsetX + W, posYScale + camOffsetY + H)
+        ctx.closePath()
+        ctx.fillStyle = clearColor(ids[id])
+        ctx.fill()
+
+ctx.fillStyle = "#000"
+        ctx.fillText(d, posXScale + camOffsetX, posYScale + camOffsetY)
+    }
+
+
+    const drawMap = () => {
+        let d = 0
+        for(let i = 0; i <= mapH + mapW; i ++) {
+            for(let j = Math.max(0, i - mapH + 1); j <= Math.min(i, mapW - 1); j ++) {
+
+                const y = j
+                const x = i - j
+
+        
+                const px = O_X + (x * W - y * W)
+                const py = O_Y + (x * H + y * H)
+                
+                //console.log(x, y)
+                    
+                drawTile(map[x + y * mapH], px, py, 0, d++)
+            }
+        }
+    }
+
+    drawMap()
+
+        
+
+
+
+</script>

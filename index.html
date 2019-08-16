@@ -12,6 +12,10 @@
 
 
 <script>
+    const DEBUG = {
+        TILE: false,
+        FLUID: false,
+    }
 
 function LightenDarkenColor(col, amt) {
   
@@ -49,20 +53,72 @@ function LightenDarkenColor(col, amt) {
     c.height = window.innerHeight
 
     ctx = c.getContext("2d")
-
-    ctx.fillStyle = "#C1C5C9"
-    ctx.fillRect(0,0,window.innerWidth, window.innerHeight)
-
+    const cl = () => {
+        
+        ctx.fillStyle = "#131518"
+        ctx.fillRect(0,0,window.innerWidth, window.innerHeight)
+   
+    }
 
     const map = [
         1, 1, 1, 1,
-        1, 0, 0, 1,
-        1, 0, 2, 1,
+        1, 1, 1, 1,
+        1, 1, 1, 1,
         1, 1, 1, 1,
     ]
+
+    const elevations = [
+        1,1,1,1,
+        1,4,3,1,
+        1,1,3,1,
+        1,1,1,1,
+    ]
+
+    //Helpers 
+    const getNeg = (i) => {
+        // 8 voisins
+        
+    }
+
+    // FLUIDS
+    const SOURCE_IDS = [1]
+
+    const fluids = [
+        0,0,0,0,
+        0,0,0,0,
+        0,0,0,0,
+        0,0,0,0,
+    ]
+    const FLUID_PROPAGATION = 1
+    const FLUID_GROTHS = 1
+    const FLUID_LIMIT = 100
+
+    const propagate = () => {
+        for(let i  = 0; i < fluids.length; i++) {
+            if(i === SOURCE_IDS[0]) {
+                fluids[i] += FLUID_GROTHS
+                
+            }
+            if(fluids[i] >= FLUID_LIMIT) {
+                const neightboursIds = getNeg(i)
+            }
+        }
+    }
+
+    const drawFluids = () => {
+        for(let i = 0; i < mapW; i ++) {
+            for(let j = 0; j < mapH; j ++) {
+                const fluidProj = proj(i, j)
+                ctx.fillStyle="#000"
+                ctx.fillText(fluids[i * mapH + j], fluidProj.x + camOffsetX + TILE_SIZE, fluidProj.y + camOffsetY)
+            }
+        }
+    }
+
+
     const ids = [
-        "#123FC1",
-        "#44c629",
+        "#343536",
+        "#e6E7E8",
         "#904110",
     ]
 
@@ -71,8 +127,8 @@ function LightenDarkenColor(col, amt) {
 
 
 
-    const camOffsetX = -160
-    const camOffsetY = -160
+    const camOffsetX = 0
+    const camOffsetY = 100
     const camOffsetZ = 0
 
     const TILE_SIZE = 30
@@ -81,7 +137,18 @@ function LightenDarkenColor(col, amt) {
     const H = W * Math.sin(37 * Math.PI / 180) 
 
     const O_X = window.innerWidth / 2
-    const O_Y = window.innerHeight
+    const O_Y = 0
+    // AGENT
+    let agX = 0
+    let agY = 0
+    let dirFlags = {}
+    window.onkeydown = (e) => {
+        dirFlags[e.code] = true  
+    }
+    window.onkeyup = (e) => {
+        dirFlags[e.code] = false
+    }
+
 
 
 
@@ -93,70 +160,88 @@ function LightenDarkenColor(col, amt) {
         return LightenDarkenColor(color, -20)
     }
 
-    const drawAgent = (x, y) => {
-        
+    const proj = (x, y) => {
+        return {x: O_X + (x * W - y * W), y : O_Y + (x * H + y * H) }
+    }
+
+    const MOOVE_SPEED = .1
+    const upAgent = () => {
+        dirFlags['KeyW'] && (agY -= MOOVE_SPEED)
+        dirFlags['KeyS'] && (agY += MOOVE_SPEED)  
+        dirFlags['KeyA'] && (agX -= MOOVE_SPEED)
+        dirFlags['KeyD'] && (agX += MOOVE_SPEED)         
+    }
+
+    const drawAgent = () => {
+        const agPos = proj(agX, agY)
+        ctx.fillRect(agPos.x + camOffsetX, agPos.y + camOffsetY, 10, 10)
     }
 
     const drawTile = (id, posX, posY, posZ, d) => {
-    
-        const posXScale = posX //* W
-        const posYScale = posY //* H
+
 
         ctx.beginPath()
-        ctx.moveTo(posXScale + camOffsetX, posYScale + camOffsetY)
-        ctx.lineTo(posXScale + camOffsetX + W, posYScale + camOffsetY + H)
-        ctx.lineTo(posXScale + camOffsetX + W * 2, posYScale + camOffsetY)
-        ctx.lineTo(posXScale + camOffsetX + W, posYScale + camOffsetY - H)
+        ctx.moveTo(posX + camOffsetX, posY + camOffsetY)
+        ctx.lineTo(posX + camOffsetX + W, posY + camOffsetY + H)
+        ctx.lineTo(posX + camOffsetX + W * 2, posY + camOffsetY)
+        ctx.lineTo(posX + camOffsetX + W, posY + camOffsetY - H)
         ctx.closePath()
         ctx.fillStyle = ids[id]
         ctx.fill()
 
         ctx.beginPath()
-        ctx.moveTo(posXScale + camOffsetX, posYScale + camOffsetY)
-        ctx.lineTo(posXScale + camOffsetX, posYScale + camOffsetY + TILE_SIZE)
-        ctx.lineTo(posXScale + camOffsetX + W, posYScale + camOffsetY + H + TILE_SIZE)
-        ctx.lineTo(posXScale + camOffsetX + W, posYScale + camOffsetY + H)
+        ctx.moveTo(posX + camOffsetX, posY + camOffsetY)
+        ctx.lineTo(posX + camOffsetX, posY + camOffsetY + TILE_SIZE)
+        ctx.lineTo(posX + camOffsetX + W, posY + camOffsetY + H + TILE_SIZE)
+        ctx.lineTo(posX + camOffsetX + W, posY + camOffsetY + H)
         ctx.closePath()
         ctx.fillStyle = darkColor(ids[id])
         ctx.fill()
 
         ctx.beginPath()
-        ctx.moveTo(posXScale + camOffsetX + W * 2, posYScale + camOffsetY)
-        ctx.lineTo(posXScale + camOffsetX + W * 2, posYScale + camOffsetY + TILE_SIZE)
-        ctx.lineTo(posXScale + camOffsetX + W, posYScale + camOffsetY + H + TILE_SIZE)
-        ctx.lineTo(posXScale + camOffsetX + W, posYScale + camOffsetY + H)
+        ctx.moveTo(posX + camOffsetX + W * 2, posY + camOffsetY)
+        ctx.lineTo(posX + camOffsetX + W * 2, posY + camOffsetY + TILE_SIZE)
+        ctx.lineTo(posX + camOffsetX + W, posY + camOffsetY + H + TILE_SIZE)
+        ctx.lineTo(posX + camOffsetX + W, posY + camOffsetY + H)
         ctx.closePath()
         ctx.fillStyle = clearColor(ids[id])
         ctx.fill()
-
-ctx.fillStyle = "#000"
-        ctx.fillText(d, posXScale + camOffsetX, posYScale + camOffsetY)
+        if(DEBUG.TILE) {
+         
+            ctx.fillStyle = "#000"
+            ctx.fillText(d, posX + camOffsetX + W, posY + camOffsetY + H / 2)
+       
+        }
     }
 
 
     const drawMap = () => {
         let d = 0
         for(let i = 0; i <= mapH + mapW; i ++) {
-            for(let j = Math.max(0, i - mapH + 1); j <= Math.min(i, mapW - 1); j ++) {
+            for(let y = Math.max(0, i - mapH + 1); y <= Math.min(i, mapW - 1); y ++) {
 
-                const y = j
-                const x = i - j
+                const x = i - y
 
-        
-                const px = O_X + (x * W - y * W)
-                const py = O_Y + (x * H + y * H)
-                
-                //console.log(x, y)
-                    
-                drawTile(map[x + y * mapH], px, py, 0, d++)
+                const tilePos = proj(x, y)
+               
+                const mindex = x + y * mapH
+                for(let j = 0; j < elevations[mindex]; j ++) {
+                    drawTile(map[mindex], tilePos.x, tilePos.y, 0, d++)
+                }                        
             }
         }
     }
+    const l = () => {
+        cl()
+        drawMap()
+        upAgent()
+        propagate()
+        drawAgent()
+        drawFluids()
 
-    drawMap()
+        requestAnimationFrame(l)
+    }
+    l()
 
-        
-
-
-
+    
 </script>

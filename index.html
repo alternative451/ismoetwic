@@ -13,7 +13,7 @@
 
 <script>
     const DEBUG = {
-        TILE: false,
+        TILE: true,
         FLUID: false,
     }
 
@@ -21,7 +21,7 @@ function LightenDarkenColor(col, amt) {
   
   var usePound = false;
 
-  if (col[0] == "#") {
+  if (col[0] === "#") {
       col = col.slice(1);
       usePound = true;
   }
@@ -46,6 +46,8 @@ function LightenDarkenColor(col, amt) {
   return (usePound?"#":"") + (g | (b << 8) | (r << 16)).toString(16);
 
 }
+
+
 </script>
 
 <script>
@@ -74,56 +76,112 @@ function LightenDarkenColor(col, amt) {
         1,1,1,1,
     ]
 
-    //Helpers 
-    const getNeg = (i) => {
+    const curryClamp = (bMin, bMax) => (value) => {
+        if(value < bMin) return bMin
+        if(value > bMax) return bMax
+        return value 
+    }
+
+    const zeroCentClamp = curryClamp(0, 100)
+
+
+    //grid Helpers 
+
+    // k,o,o
+    // o,o,o
+    // o,o,o
+
+    const getNeighbors = (i) => {
+        const nIds = []
         // 8 voisins
-        
+        if(i<mapW) { //1 ligne
+            if(i === 0) {// coin haut gauche
+                nIds.push(i + 1, i + mapW, i + mapW + 1)
+            } else if(i === mapH * mapW - 1) {// coin haut droite 
+                nIds.push(i - 1, i + mapW - 1, i + mapW)
+            } else { // le reste
+                nIds.push(i - 1,i + 1, i + mapW - 1, i + mapW, i + mapW + 1)
+            }
+        } else if(i > mapW * (mapH - 1)) { // dern ligne
+            if(i === mapW * (mapH - 1)) { // coin bas gauche
+                nIds.push(i - mapW, i - mapW + 1, i + 1)
+            } else if(i === mapH * mapW - 1) { // coin bas droite
+                nIds.push(i - mapW - 1, i - mapW, i - 1)
+            } else {//le reste
+                nIds.push(i - mapW - 1, i - mapW, i - mapW + 1, i - 1, i + 1)
+            }
+        } else if(i % mapW === 1) {//1ere colone
+            nIds.push(i - mapW, i - mapW + 1, i + 1, i + mapW, i + mapW + 1)            
+        } else if(i % mapW === 0) {//derniere colone
+            nIds.push(i - mapW - 1, i - mapW, i - 1, i + mapW - 1, i + mapW + 1)
+        } else { // le centre
+            nIds.push(i - mapW - 1, i - mapW, i - mapW + 1, i - 1, i + 1, i + mapW - 1, i + mapW, i + mapW + 1)
+        }
+        return nIds
+
     }
 
     // FLUIDS
-    const SOURCE_IDS = [1]
+    const SOURCE_IDS = [0]
 
-    const fluids = [
+    let fluids = [
         0,0,0,0,
         0,0,0,0,
         0,0,0,0,
         0,0,0,0,
     ]
+
+    const nextStepFluids = []
+
     const FLUID_PROPAGATION = 1
-    const FLUID_GROTHS = 1
+    const FLUID_GROWTH = 1
     const FLUID_LIMIT = 100
 
     const propagate = () => {
         for(let i  = 0; i < fluids.length; i++) {
             if(i === SOURCE_IDS[0]) {
-                fluids[i] += FLUID_GROTHS
+                nextStepFluids[i] = zeroCentClamp(fluids[i] + FLUID_GROWTH)
                 
             }
             if(fluids[i] >= FLUID_LIMIT) {
-                const neightboursIds = getNeg(i)
+                const neighborsIds = getNeighbors(i)
+                neighborsIds.forEach(id => {
+                    nextStepFluids[id] = zeroCentClamp( fluids[id] + FLUID_GROWTH / neighborsIds.length )
+                })
+            } else {
+                nextStepFluids[i] = fluids[i]
             }
         }
+        fluids = nextStepFluids
+
     }
 
     const drawFluids = () => {
         for(let i = 0; i < mapW; i ++) {
             for(let j = 0; j < mapH; j ++) {
-                const fluidProj = proj(i, j)
-                ctx.fillStyle="#000"
-                ctx.fillText(fluids[i * mapH + j], fluidProj.x + camOffsetX + TILE_SIZE, fluidProj.y + camOffsetY)
+                const fluidProj = proj(j, i)
+                if(DEBUG.FLUID) {
+
+                    ctx.fillStyle="#000"
+                    ctx.fillText(fluids[i * mapW + j].toFixed(1), fluidProj.x + camOffsetX + TILE_SIZE, fluidProj.y + camOffsetY)
+
+                }
             }
         }
     }
 
 
-    const ids = [
+    const colors = [
         "#343536",
         "#e6E7E8",
         "#904110",
+        "#342222"//DARK RED
     ]
 
     const mapW = 4
     const mapH = 4
+
+    let hoverCase = null
 
 
 
@@ -178,38 +236,45 @@ function LightenDarkenColor(col, amt) {
     }
 
     const drawTile = (id, posX, posY, posZ, d) => {
-
+        
+        let color = colors[map[id]]
+        if(fluids[id] === 100) {
+            color = colors[3]
+        }
+        if(hoverCase && hoverCase === id) {
+            color = "#00FF28"
+        }
 
         ctx.beginPath()
-        ctx.moveTo(posX + camOffsetX, posY + camOffsetY)
-        ctx.lineTo(posX + camOffsetX + W, posY + camOffsetY + H)
-        ctx.lineTo(posX + camOffsetX + W * 2, posY + camOffsetY)
-        ctx.lineTo(posX + camOffsetX + W, posY + camOffsetY - H)
+        ctx.moveTo(posX + camOffsetX, posY - posZ + camOffsetY)
+        ctx.lineTo(posX + camOffsetX + W, posY - posZ + camOffsetY + H)
+        ctx.lineTo(posX + camOffsetX + W * 2, posY - posZ + camOffsetY)
+        ctx.lineTo(posX + camOffsetX + W, posY - posZ + camOffsetY - H)
         ctx.closePath()
-        ctx.fillStyle = ids[id]
+        ctx.fillStyle = color
         ctx.fill()
 
         ctx.beginPath()
-        ctx.moveTo(posX + camOffsetX, posY + camOffsetY)
-        ctx.lineTo(posX + camOffsetX, posY + camOffsetY + TILE_SIZE)
-        ctx.lineTo(posX + camOffsetX + W, posY + camOffsetY + H + TILE_SIZE)
-        ctx.lineTo(posX + camOffsetX + W, posY + camOffsetY + H)
+        ctx.moveTo(posX + camOffsetX, posY - posZ + camOffsetY)
+        ctx.lineTo(posX + camOffsetX, posY - posZ + camOffsetY + TILE_SIZE)
+        ctx.lineTo(posX + camOffsetX + W, posY - posZ + camOffsetY + H + TILE_SIZE)
+        ctx.lineTo(posX + camOffsetX + W, posY - posZ + camOffsetY + H)
         ctx.closePath()
-        ctx.fillStyle = darkColor(ids[id])
+        ctx.fillStyle = darkColor(color)
         ctx.fill()
 
         ctx.beginPath()
-        ctx.moveTo(posX + camOffsetX + W * 2, posY + camOffsetY)
-        ctx.lineTo(posX + camOffsetX + W * 2, posY + camOffsetY + TILE_SIZE)
-        ctx.lineTo(posX + camOffsetX + W, posY + camOffsetY + H + TILE_SIZE)
-        ctx.lineTo(posX + camOffsetX + W, posY + camOffsetY + H)
+        ctx.moveTo(posX + camOffsetX + W * 2, posY - posZ + camOffsetY)
+        ctx.lineTo(posX + camOffsetX + W * 2, posY - posZ + camOffsetY + TILE_SIZE)
+        ctx.lineTo(posX + camOffsetX + W, posY - posZ + camOffsetY + H + TILE_SIZE)
+        ctx.lineTo(posX + camOffsetX + W, posY - posZ + camOffsetY + H)
         ctx.closePath()
-        ctx.fillStyle = clearColor(ids[id])
+        ctx.fillStyle = clearColor(color)
         ctx.fill()
         if(DEBUG.TILE) {
          
             ctx.fillStyle = "#000"
-            ctx.fillText(d, posX + camOffsetX + W, posY + camOffsetY + H / 2)
+            ctx.fillText(d, posX + camOffsetX + W, posY - posZ + camOffsetY + H / 2)
        
         }
     }
@@ -226,10 +291,19 @@ function LightenDarkenColor(col, amt) {
                
                 const mindex = x + y * mapH
                 for(let j = 0; j < elevations[mindex]; j ++) {
-                    drawTile(map[mindex], tilePos.x, tilePos.y, 0, d++)
+                    drawTile(mindex, tilePos.x, tilePos.y, H * j, mindex)
                 }                        
             }
         }
+    }
+
+    document.onmousemove = (e) => {
+        cx = (e.clientX)
+        cy = (e.clientY)
+            // {x: O_X + (x * W - y * W), y : O_Y + (x * H + y * H) }
+        hoverCase = {x : cx - O_X, y : cy - O_Y}
+        console.log(hoverCase)
+
     }
     const l = () => {
         cl()

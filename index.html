@@ -1,321 +1,238 @@
-<!DOCTYPE html>
+<!doctype HTML>
+
+
+<canvas id=c1></canvas>
+<canvas id=o1></canvas>
+
+<input id=bllr value=1>
+
 <style>
     * {
-        border: 0;margin: 0;padding: 0;
+        padding: 0;
+        margin: 0;
     }
-
 
 </style>
-<canvas id="c">
-
-</canvas>
-
-
 <script>
-    const DEBUG = {
-        TILE: true,
-        FLUID: false,
+    const context = c1.getContext("2d") 
+    const gl = o1.getContext("webgl")
+    let ang = 0
+
+
+    let positionLocation = null
+    let texCoordLocation = null
+    let resolutionLocation = null
+    let textureSizeLocation = null
+    let bluurRangeLocation = null
+        
+    const initGl = () => {
+        const program = gl.createProgram();
+
+        const fragShaderSource =  `
+    
+            precision mediump float;
+            
+            // our texture
+            uniform sampler2D u_image;
+                
+            // the texCoords passed in from the vertex shader.
+            varying vec2 v_texCoord;
+            uniform vec2 u_textureSize;
+
+            uniform float u_bluur_range;
+
+
+            void main() {
+                vec2 onePixel = vec2(1.0, 1.0) / u_textureSize;
+
+                // Look up a color from the texture.
+                 gl_FragColor = ( texture2D(u_image, v_texCoord) +
+       texture2D(u_image, v_texCoord + vec2(onePixel.x * u_bluur_range, 0.0)) +
+       texture2D(u_image, v_texCoord + vec2(-onePixel.x * u_bluur_range, 0.0))) / 3.0;
+            }
+        `
+
+        const vertexShaderSource = `
+        attribute vec2 a_position;
+        attribute vec2 a_texCoord;
+        
+        uniform vec2 u_resolution;
+        
+        varying vec2 v_texCoord;
+        
+        void main() {
+           // convert the rectangle from pixels to 0.0 to 1.0
+           vec2 zeroToOne = a_position / u_resolution;
+        
+           // convert from 0->1 to 0->2
+           vec2 zeroToTwo = zeroToOne * 2.0;
+        
+           // convert from 0->2 to -1->+1 (clipspace)
+           vec2 clipSpace = zeroToTwo - 1.0;
+        
+           gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+        
+           // pass the texCoord to the fragment shader
+           // The GPU will interpolate this value between points.
+           v_texCoord = a_texCoord;
+        }
+        `
+
+        const fragShader = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fragShader, fragShaderSource);
+        gl.compileShader(fragShader);
+
+        let compiled = gl.getShaderParameter(fragShader, gl.COMPILE_STATUS);
+        if(!compiled) {
+            console.log('Shader compiler log: ' + gl.getShaderInfoLog(fragShader));
+
+        }
+           
+
+        const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+
+        gl.shaderSource(vertexShader, vertexShaderSource);
+        gl.compileShader(vertexShader);
+
+        compiled = gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS);
+        if(!compiled) {
+            console.log('Shader compiler log: ' + gl.getShaderInfoLog(vertexShader));
+        }
+
+       
+
+
+        gl.attachShader(program, fragShader)
+        gl.attachShader(program, vertexShader)
+
+        gl.linkProgram(program);
+
+
+        gl.useProgram(program);
+
+
+        const texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+
+
+
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+        gl.clearColor(0, 0, 0, 0);
+
+        return program
     }
 
-function LightenDarkenColor(col, amt) {
-  
-  var usePound = false;
 
-  if (col[0] === "#") {
-      col = col.slice(1);
-      usePound = true;
-  }
-
-  var num = parseInt(col,16);
-
-  var r = (num >> 16) + amt;
-
-  if (r > 255) r = 255;
-  else if  (r < 0) r = 0;
-
-  var b = ((num >> 8) & 0x00FF) + amt;
-
-  if (b > 255) b = 255;
-  else if  (b < 0) b = 0;
-
-  var g = (num & 0x0000FF) + amt;
-
-  if (g > 255) g = 255;
-  else if (g < 0) g = 0;
-
-  return (usePound?"#":"") + (g | (b << 8) | (r << 16)).toString(16);
-
+const  setRectangle = (x, y, width, height) => {
+  var x1 = x;
+  var x2 = x + width;
+  var y1 = y;
+  var y2 = y + height;
+  return  new Float32Array([
+     x1, y1,
+     x2, y1,
+     x1, y2,
+     x1, y2,
+     x2, y1,
+     x2, y2,
+  ])
 }
 
+let positionBuffer = null
+let texCoordBuffer = null
 
-</script>
+    const initBuffers = () => {
+        positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 
-<script>
-    c.width = window.innerWidth
-    c.height = window.innerHeight
+        const recBuffer = setRectangle(0, 0, c1.width, c1.height);
+        gl.bufferData(gl.ARRAY_BUFFER, recBuffer, gl.STATIC_DRAW);
 
-    ctx = c.getContext("2d")
-    const cl = () => {
+        texCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            0.0,  0.0,
+            1.0,  0.0,
+            0.0,  1.0,
+            0.0,  1.0,
+            1.0,  0.0,
+            1.0,  1.0,
+        ]), gl.STATIC_DRAW);
+
+    }
+
+    const prpare = () => {
+        gl.enableVertexAttribArray(positionLocation);
+        gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
+        gl.uniform2f(textureSizeLocation, c1.width, c1.height);
+
+    }
+
+
+
+    const drawGl = (program) => {
+
+        gl.uniform1f(bluurRangeLocation, parseInt(bllr.value));
+
+
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.vertexAttribPointer(            positionLocation, 2,  gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(texCoordLocation);
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+        gl.vertexAttribPointer(            texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+        bluurRangeLocation
+        gl.drawArrays( gl.TRIANGLES, 0, 6);
+
+    }
+
+    const program = initGl()
+
+    positionLocation = gl.getAttribLocation(program, "a_position");
+    texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+    resolutionLocation = gl.getUniformLocation(program, "u_resolution");
+    textureSizeLocation = gl.getUniformLocation(program, "u_textureSize");
+    bluurRangeLocation = gl.getUniformLocation(program, "u_bluur_range");
+
+
+    initBuffers()
+    prpare()
+    const draw = () => {
+        // reset canvas
+        c1.width += 0
+
+        // imp angle
+        ang += 0.01
+        // make dark background
+        context.fillStyle = "#111319"
+        context.fillRect(0,0,c1.width, c1.height)
+
+        context.save()
+        context.translate(c1.width /2 , c1.height /2)
         
-        ctx.fillStyle = "#131518"
-        ctx.fillRect(0,0,window.innerWidth, window.innerHeight)
-   
-    }
+        context.rotate(ang)
+        context.fillStyle = "#fff"
+        context.fillRect(-50,-50,100,100)
+        context.restore()
 
-    const map = [
-        1, 1, 1, 1,
-        1, 1, 1, 1,
-        1, 1, 1, 1,
-        1, 1, 1, 1,
-    ]
+        // paint gl
+      
+      drawGl(program)
 
-    const elevations = [
-        1,1,1,1,
-        1,4,3,1,
-        1,1,3,1,
-        1,1,1,1,
-    ]
-
-    const curryClamp = (bMin, bMax) => (value) => {
-        if(value < bMin) return bMin
-        if(value > bMax) return bMax
-        return value 
-    }
-
-    const zeroCentClamp = curryClamp(0, 100)
+        // start again
+       requestAnimationFrame(draw)
+    } 
 
 
-    //grid Helpers 
-
-    // k,o,o
-    // o,o,o
-    // o,o,o
-
-    const getNeighbors = (i) => {
-        const nIds = []
-        // 8 voisins
-        if(i<mapW) { //1 ligne
-            if(i === 0) {// coin haut gauche
-                nIds.push(i + 1, i + mapW, i + mapW + 1)
-            } else if(i === mapH * mapW - 1) {// coin haut droite 
-                nIds.push(i - 1, i + mapW - 1, i + mapW)
-            } else { // le reste
-                nIds.push(i - 1,i + 1, i + mapW - 1, i + mapW, i + mapW + 1)
-            }
-        } else if(i > mapW * (mapH - 1)) { // dern ligne
-            if(i === mapW * (mapH - 1)) { // coin bas gauche
-                nIds.push(i - mapW, i - mapW + 1, i + 1)
-            } else if(i === mapH * mapW - 1) { // coin bas droite
-                nIds.push(i - mapW - 1, i - mapW, i - 1)
-            } else {//le reste
-                nIds.push(i - mapW - 1, i - mapW, i - mapW + 1, i - 1, i + 1)
-            }
-        } else if(i % mapW === 1) {//1ere colone
-            nIds.push(i - mapW, i - mapW + 1, i + 1, i + mapW, i + mapW + 1)            
-        } else if(i % mapW === 0) {//derniere colone
-            nIds.push(i - mapW - 1, i - mapW, i - 1, i + mapW - 1, i + mapW + 1)
-        } else { // le centre
-            nIds.push(i - mapW - 1, i - mapW, i - mapW + 1, i - 1, i + 1, i + mapW - 1, i + mapW, i + mapW + 1)
-        }
-        return nIds
-
-    }
-
-    // FLUIDS
-    const SOURCE_IDS = [0]
-
-    let fluids = [
-        0,0,0,0,
-        0,0,0,0,
-        0,0,0,0,
-        0,0,0,0,
-    ]
-
-    const nextStepFluids = []
-
-    const FLUID_PROPAGATION = 1
-    const FLUID_GROWTH = 1
-    const FLUID_LIMIT = 100
-
-    const propagate = () => {
-        for(let i  = 0; i < fluids.length; i++) {
-            if(i === SOURCE_IDS[0]) {
-                nextStepFluids[i] = zeroCentClamp(fluids[i] + FLUID_GROWTH)
-                
-            }
-            if(fluids[i] >= FLUID_LIMIT) {
-                const neighborsIds = getNeighbors(i)
-                neighborsIds.forEach(id => {
-                    nextStepFluids[id] = zeroCentClamp( fluids[id] + FLUID_GROWTH / neighborsIds.length )
-                })
-            } else {
-                nextStepFluids[i] = fluids[i]
-            }
-        }
-        fluids = nextStepFluids
-
-    }
-
-    const drawFluids = () => {
-        for(let i = 0; i < mapW; i ++) {
-            for(let j = 0; j < mapH; j ++) {
-                const fluidProj = proj(j, i)
-                if(DEBUG.FLUID) {
-
-                    ctx.fillStyle="#000"
-                    ctx.fillText(fluids[i * mapW + j].toFixed(1), fluidProj.x + camOffsetX + TILE_SIZE, fluidProj.y + camOffsetY)
-
-                }
-            }
-        }
-    }
-
-
-    const colors = [
-        "#343536",
-        "#e6E7E8",
-        "#904110",
-        "#342222"//DARK RED
-    ]
-
-    const mapW = 4
-    const mapH = 4
-
-    let hoverCase = null
+draw()
 
 
 
-    const camOffsetX = 0
-    const camOffsetY = 100
-    const camOffsetZ = 0
-
-    const TILE_SIZE = 30
-    const ALPHA = 37//°
-    const W = Math.sqrt(2) * TILE_SIZE
-    const H = W * Math.sin(37 * Math.PI / 180) 
-
-    const O_X = window.innerWidth / 2
-    const O_Y = 0
-    // AGENT
-    let agX = 0
-    let agY = 0
-    let dirFlags = {}
-    window.onkeydown = (e) => {
-        dirFlags[e.code] = true  
-    }
-    window.onkeyup = (e) => {
-        dirFlags[e.code] = false
-    }
-
-
-
-
-    const clearColor = (color) => {
-        return LightenDarkenColor(color, 20)
-    }
-
-    const darkColor = (color) => {
-        return LightenDarkenColor(color, -20)
-    }
-
-    const proj = (x, y) => {
-        return {x: O_X + (x * W - y * W), y : O_Y + (x * H + y * H) }
-    }
-
-    const MOOVE_SPEED = .1
-    const upAgent = () => {
-        dirFlags['KeyW'] && (agY -= MOOVE_SPEED)
-        dirFlags['KeyS'] && (agY += MOOVE_SPEED)  
-        dirFlags['KeyA'] && (agX -= MOOVE_SPEED)
-        dirFlags['KeyD'] && (agX += MOOVE_SPEED)         
-    }
-
-    const drawAgent = () => {
-        const agPos = proj(agX, agY)
-        ctx.fillRect(agPos.x + camOffsetX, agPos.y + camOffsetY, 10, 10)
-    }
-
-    const drawTile = (id, posX, posY, posZ, d) => {
-        
-        let color = colors[map[id]]
-        if(fluids[id] === 100) {
-            color = colors[3]
-        }
-        if(hoverCase && hoverCase === id) {
-            color = "#00FF28"
-        }
-
-        ctx.beginPath()
-        ctx.moveTo(posX + camOffsetX, posY - posZ + camOffsetY)
-        ctx.lineTo(posX + camOffsetX + W, posY - posZ + camOffsetY + H)
-        ctx.lineTo(posX + camOffsetX + W * 2, posY - posZ + camOffsetY)
-        ctx.lineTo(posX + camOffsetX + W, posY - posZ + camOffsetY - H)
-        ctx.closePath()
-        ctx.fillStyle = color
-        ctx.fill()
-
-        ctx.beginPath()
-        ctx.moveTo(posX + camOffsetX, posY - posZ + camOffsetY)
-        ctx.lineTo(posX + camOffsetX, posY - posZ + camOffsetY + TILE_SIZE)
-        ctx.lineTo(posX + camOffsetX + W, posY - posZ + camOffsetY + H + TILE_SIZE)
-        ctx.lineTo(posX + camOffsetX + W, posY - posZ + camOffsetY + H)
-        ctx.closePath()
-        ctx.fillStyle = darkColor(color)
-        ctx.fill()
-
-        ctx.beginPath()
-        ctx.moveTo(posX + camOffsetX + W * 2, posY - posZ + camOffsetY)
-        ctx.lineTo(posX + camOffsetX + W * 2, posY - posZ + camOffsetY + TILE_SIZE)
-        ctx.lineTo(posX + camOffsetX + W, posY - posZ + camOffsetY + H + TILE_SIZE)
-        ctx.lineTo(posX + camOffsetX + W, posY - posZ + camOffsetY + H)
-        ctx.closePath()
-        ctx.fillStyle = clearColor(color)
-        ctx.fill()
-        if(DEBUG.TILE) {
-         
-            ctx.fillStyle = "#000"
-            ctx.fillText(d, posX + camOffsetX + W, posY - posZ + camOffsetY + H / 2)
-       
-        }
-    }
-
-
-    const drawMap = () => {
-        let d = 0
-        for(let i = 0; i <= mapH + mapW; i ++) {
-            for(let y = Math.max(0, i - mapH + 1); y <= Math.min(i, mapW - 1); y ++) {
-
-                const x = i - y
-
-                const tilePos = proj(x, y)
-               
-                const mindex = x + y * mapH
-                for(let j = 0; j < elevations[mindex]; j ++) {
-                    drawTile(mindex, tilePos.x, tilePos.y, H * j, mindex)
-                }                        
-            }
-        }
-    }
-
-    document.onmousemove = (e) => {
-        cx = (e.clientX)
-        cy = (e.clientY)
-            // {x: O_X + (x * W - y * W), y : O_Y + (x * H + y * H) }
-        hoverCase = {x : cx - O_X, y : cy - O_Y}
-        console.log(hoverCase)
-
-    }
-    const l = () => {
-        cl()
-        drawMap()
-        upAgent()
-        propagate()
-        drawAgent()
-        drawFluids()
-
-        requestAnimationFrame(l)
-    }
-    l()
-
-    
 </script>
